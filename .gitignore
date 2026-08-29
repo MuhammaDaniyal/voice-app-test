@@ -1,0 +1,24 @@
+# Gradle files
+.gradle/
+build/
+app/build/
+
+# Local configuration file (prevents committing your Android SDK path)
+local.properties
+
+# IntelliJ / Android Studio workspace files
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Mac system files (if you ever work on a Mac)
+.DS_Store
+
+# Native build folders
+.externalNativeBuild/
+.cxx/
+
+# Captures / logs
+captures/
+*.log
