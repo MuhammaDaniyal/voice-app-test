@@ -30,7 +30,7 @@ Before running, ensure you have an Android device connected via USB with **USB D
 3. Once installed, open the app on your phone and grant the microphone permission when prompted.
 4. To view the real-time transcriptions, run `adb logcat` and filter for Vosk output:
    ```bash
-   adb logcat -s Vosk VoskPartial VoskResult VoskError
+   adb logcat -s VoiceRouter VoskError
    ```
    *(Note: If `adb` is not in your global path, use the full path, e.g., `~/Android/Sdk/platform-tools/adb logcat ...`)*
 
