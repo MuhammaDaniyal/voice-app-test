@@ -4,187 +4,91 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.util.Log
-import android.app.Activity
-import android.widget.Button
-import android.widget.EditText
-import android.widget.TextView
-import androidx.core.app.ActivityCompat
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
-import org.json.JSONArray
-import org.json.JSONObject
-import org.vosk.Model
-import org.vosk.Recognizer
-import org.vosk.android.RecognitionListener
-import org.vosk.android.SpeechService
-import org.vosk.android.StorageService
+import com.example.voiceapp.ui.BaseerScreen
+import com.example.voiceapp.ui.theme.BaseerTheme
 
-class MainActivity : Activity(), RecognitionListener {
+/**
+ * BASEER — Assistive app POC.
+ * Entry point: requests permissions, initializes Vosk, renders the Compose UI.
+ */
+class MainActivity : ComponentActivity() {
 
-    private var speechService: SpeechService? = null
-    private var voskModel: Model? = null
-    private val PERMISSIONS_REQUEST_CODE = 1
-    
-    private lateinit var recognizedTextView: TextView
-    private lateinit var vocabularyEditText: EditText
-    private lateinit var applyVocabularyButton: Button
-
-    // Requesting both AUDIO and CAMERA upfront
-    private val REQUIRED_PERMISSIONS = arrayOf(
-        Manifest.permission.RECORD_AUDIO,
-        Manifest.permission.CAMERA
-    )
+    private lateinit var voskManager: VoskManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-        
-        recognizedTextView = findViewById(R.id.recognizedTextView)
-        vocabularyEditText = findViewById(R.id.vocabularyEditText)
-        applyVocabularyButton = findViewById(R.id.applyVocabularyButton)
-        
-        applyVocabularyButton.setOnClickListener {
-            applyCustomVocabulary()
-        }
-        
-        if (!hasPermissions()) {
-            ActivityCompat.requestPermissions(this, REQUIRED_PERMISSIONS, PERMISSIONS_REQUEST_CODE)
-        } else {
-            initModel()
-        }
-    }
 
-    private fun applyCustomVocabulary() {
-        val inputText = vocabularyEditText.text.toString()
-        if (inputText.isBlank() || voskModel == null) return
-        
-        val words = inputText.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-        val jsonArray = JSONArray()
-        for (word in words) {
-            jsonArray.put(word)
-        }
-        jsonArray.put("[unk]")
-        
-        val grammarJson = jsonArray.toString()
-        Log.d("VoiceRouter", "Applying new vocabulary: $grammarJson")
-        
-        speechService?.stop()
-        speechService?.shutdown()
-        speechService = null
-        
-        val recognizer = Recognizer(voskModel, 16000.0f, grammarJson)
-        speechService = SpeechService(recognizer, 16000.0f)
-        speechService?.startListening(this)
-        
-        recognizedTextView.text = "Vocabulary applied! Say something..."
-    }
+        voskManager = VoskManager(applicationContext)
 
-    private fun hasPermissions(): Boolean {
-        return REQUIRED_PERMISSIONS.all {
-            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
-        }
-    }
+        setContent {
+            BaseerTheme {
+                // Permission state
+                var hasCameraPermission by remember {
+                    mutableStateOf(
+                        ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+                                == PackageManager.PERMISSION_GRANTED
+                    )
+                }
+                var hasAudioPermission by remember {
+                    mutableStateOf(
+                        ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                                == PackageManager.PERMISSION_GRANTED
+                    )
+                }
+                var voskReady by remember { mutableStateOf(false) }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == PERMISSIONS_REQUEST_CODE) {
-            // Check if ALL requested permissions were granted
-            if (hasPermissions()) {
-                initModel()
-            } else {
-                Log.e("VoiceRouter", "Some permissions were denied by the user. The app requires them to function.")
-            }
-        }
-    }
+                // Permission launcher
+                val permissionLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.RequestMultiplePermissions()
+                ) { permissions ->
+                    hasCameraPermission = permissions[Manifest.permission.CAMERA] == true
+                    hasAudioPermission = permissions[Manifest.permission.RECORD_AUDIO] == true
+                    Log.d("Baseer", "Permissions: camera=$hasCameraPermission, audio=$hasAudioPermission")
+                }
 
-    private fun initModel() {
-        StorageService.unpack(this, "model-en-us", "model",
-            { model -> 
-                voskModel = model
-                setupRecognizer(model) 
-            },
-            { exception -> Log.e("VoiceRouter", "Failed to unpack model: ${exception.message}") }
-        )
-    }
-
-    private fun setupRecognizer(model: Model) {
-        // 1. Vosk Grammar Configuration
-        val grammarJson = "[\"currency\", \"read screen\", \"detect hazard\", \"find object\", \"help\", \"stop\", \"describe\", \"[unk]\"]"
-        
-        // Pass the grammar constraint to the Recognizer
-        val recognizer = Recognizer(model, 16000.0f, grammarJson)
-        
-        speechService = SpeechService(recognizer, 16000.0f)
-        speechService?.startListening(this)
-    }
-
-    override fun onPartialResult(hypothesis: String?) {
-        if (hypothesis != null) {
-            try {
-                val jsonObject = JSONObject(hypothesis)
-                if (jsonObject.has("partial")) {
-                    val partial = jsonObject.getString("partial")
-                    // Filter out empty partials and [unk]
-                    if (partial.isNotBlank() && partial != "[unk]") {
-                        Log.d("VoiceRouter", "Partial Recognized Keyword: $partial")
-                        runOnUiThread {
-                            recognizedTextView.text = partial
-                        }
+                // Request permissions on first launch
+                LaunchedEffect(Unit) {
+                    val permsToRequest = mutableListOf<String>()
+                    if (!hasCameraPermission) permsToRequest.add(Manifest.permission.CAMERA)
+                    if (!hasAudioPermission) permsToRequest.add(Manifest.permission.RECORD_AUDIO)
+                    if (permsToRequest.isNotEmpty()) {
+                        permissionLauncher.launch(permsToRequest.toTypedArray())
                     }
                 }
-            } catch (e: Exception) {
-                Log.e("VoiceRouter", "JSON Parse Error on Partial: ${e.message}")
-            }
-        }
-    }
 
-    override fun onResult(hypothesis: String?) {
-        if (hypothesis != null) {
-            try {
-                val jsonObject = JSONObject(hypothesis)
-                if (jsonObject.has("text")) {
-                    val text = jsonObject.getString("text")
-                    if (text.isNotBlank() && text != "[unk]") {
-                        runOnUiThread {
-                            recognizedTextView.text = text
-                        }
+                // Initialize Vosk model
+                LaunchedEffect(hasAudioPermission) {
+                    if (hasAudioPermission && !voskManager.isModelReady) {
+                        voskManager.initModel(
+                            onReady = { voskReady = true },
+                            onError = { Log.e("Baseer", "Vosk init failed: $it") }
+                        )
                     }
-                    routeIntent(text)
                 }
-            } catch (e: Exception) {
-                Log.e("VoiceRouter", "JSON Parse Error on Result: ${e.message}")
+
+                // Main screen
+                BaseerScreen(
+                    voskManager = voskManager,
+                    lifecycleOwner = this@MainActivity,
+                    hasCameraPermission = hasCameraPermission,
+                    hasAudioPermission = hasAudioPermission
+                )
             }
         }
     }
 
-    // 2. Intent Router
-    private fun routeIntent(text: String) {
-        // Filter out empty string results and [unk] gracefully without false positives
-        if (text.isBlank() || text == "[unk]") return
-        
-        Log.d("VoiceRouter", "========================================")
-        Log.d("VoiceRouter", "Recognized Keyword: '$text'")
-
-        when (text) {
-            "currency" -> Log.d("VoiceRouter", "Routed Mode Action: Triggering Currency Mode")
-            "read screen" -> Log.d("VoiceRouter", "Routed Mode Action: Triggering Read Screen Mode")
-            "detect hazard" -> Log.d("VoiceRouter", "Routed Mode Action: Triggering Hazard Detection Mode")
-            "find object" -> Log.d("VoiceRouter", "Routed Mode Action: Triggering Find Object Mode")
-            "help" -> Log.d("VoiceRouter", "Routed Mode Action: Triggering Help Mode")
-            "stop" -> Log.d("VoiceRouter", "Routed Mode Action: Triggering Stop Mode")
-            "describe" -> Log.d("VoiceRouter", "Routed Mode Action: Triggering Describe Mode")
-            else -> Log.d("VoiceRouter", "Routed Mode Action: Unknown command ($text)")
-        }
-        Log.d("VoiceRouter", "========================================")
+    override fun onDestroy() {
+        super.onDestroy()
+        voskManager.destroy()
     }
-
-    override fun onFinalResult(hypothesis: String?) {
-        // Treat final result the same as a normal result
-        onResult(hypothesis)
-    }
-
-    override fun onError(exception: Exception?) {
-        Log.e("VoiceRouter", "Vosk Error: ${exception?.message}")
-    }
-    
-    override fun onTimeout() {}
 }
