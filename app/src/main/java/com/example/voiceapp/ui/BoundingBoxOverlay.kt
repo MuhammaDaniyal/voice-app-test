@@ -87,21 +87,23 @@ fun BoundingBoxOverlayContainer(
                 drawLine(accentColor, Offset(rightPx, bottomPx), Offset(rightPx, bottomPx - cornerLen), strokeWidth = strokeW)
             }
 
-            // Position Label Badge inside screen bounds
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(start = 24.dp, top = 24.dp)
-            ) {
-                Text(
-                    text = label,
-                    color = Color.Black,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
+            // Position Label Badge inside screen bounds (only if label text is present)
+            if (label.isNotBlank()) {
+                Box(
                     modifier = Modifier
-                        .background(accentColor, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 14.dp, vertical = 6.dp)
-                )
+                        .fillMaxSize()
+                        .padding(start = 24.dp, top = 24.dp)
+                ) {
+                    Text(
+                        text = label,
+                        color = Color.Black,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .background(accentColor, RoundedCornerShape(8.dp))
+                            .padding(horizontal = 14.dp, vertical = 6.dp)
+                    )
+                }
             }
         }
     }

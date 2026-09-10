@@ -109,6 +109,65 @@ class VoskManager(private val context: Context) {
         mainHandler.postDelayed(timeoutRunnable!!, LISTEN_TIMEOUT_MS)
     }
 
+    /**
+     * Start listening for free-form speech without grammar restriction.
+     * Used for capturing user input like naming an object during registration.
+     * Automatically stops after receiving one result or after [timeoutMs].
+     * @param timeoutMs Timeout in milliseconds (default 5000ms).
+     * @param onResult called with recognized text string, or null if timeout/error.
+     */
+    fun startFreeFormListening(timeoutMs: Long = 5000L, onResult: (String?) -> Unit) {
+        if (!isModelReady || model == null) {
+            Log.e(TAG, "Model not ready, cannot listen free-form")
+            onResult(null)
+            return
+        }
+
+        stopListening() // cleanup any previous session
+
+        Log.d(TAG, "Starting free-form recognition (no grammar constraint)...")
+
+        val recognizer = Recognizer(model, 16000.0f)
+        var resultDelivered = false
+
+        fun deliverResult(text: String?) {
+            if (resultDelivered) return
+            resultDelivered = true
+            cancelTimeout()
+            stopListening()
+            mainHandler.post { onResult(text) }
+        }
+
+        val listener = object : RecognitionListener {
+            override fun onPartialResult(hypothesis: String?) {}
+
+            override fun onResult(hypothesis: String?) {
+                parseAndDeliver(hypothesis) { deliverResult(it) }
+            }
+
+            override fun onFinalResult(hypothesis: String?) {
+                parseAndDeliver(hypothesis) { deliverResult(it) }
+                if (!resultDelivered) deliverResult(null)
+            }
+
+            override fun onError(exception: Exception?) {
+                Log.e(TAG, "Vosk free-form error: ${exception?.message}")
+                deliverResult(null)
+            }
+
+            override fun onTimeout() {
+                Log.d(TAG, "Vosk free-form timeout")
+                deliverResult(null)
+            }
+        }
+
+        speechService = SpeechService(recognizer, 16000.0f)
+        speechService?.startListening(listener)
+
+        timeoutRunnable = Runnable { deliverResult(null) }
+        mainHandler.postDelayed(timeoutRunnable!!, timeoutMs)
+    }
+
     /** Stop any active listening session */
     fun stopListening() {
         cancelTimeout()

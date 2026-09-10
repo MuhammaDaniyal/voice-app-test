@@ -4,7 +4,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -50,19 +49,12 @@ enum class AppMode(
     /** Progressive distance alerts — only used by modes like HAZARD */
     val distanceAlerts: List<DistanceAlert> = emptyList(),
     /** Place Memory recall TTS — spoken BEFORE switching to video (e.g. Find Object) */
-    val placeMemoryTts: String? = null
+    val placeMemoryTts: String? = null,
+    /** Whether this mode emits periodic scanning beeps during registration */
+    val enableScanningBeeps: Boolean = false,
+    /** Whether this mode emits fast proximity beeps and sprinkle chime as camera nears object */
+    val enableProximityBeeps: Boolean = false
 ) {
-    COLOR(
-        displayName = "Color",
-        voiceCommand = "color",
-        icon = Icons.Filled.Palette,
-        rawResName = "color",
-        demoVideoFile = "demo_videos/color.mp4",
-        detectionLabel = "Blue Color",
-        detectionTts = "Blue color detected",
-        detectionDelayMs = 2000L,
-        boundingBox = BoundingBoxBounds(left = 0.25f, top = 0.28f, right = 0.75f, bottom = 0.68f)
-    ),
     CURRENCY(
         displayName = "Currency",
         voiceCommand = "currency",
@@ -97,25 +89,19 @@ enum class AppMode(
         boundingBox = BoundingBoxBounds(left = 0.30f, top = 0.35f, right = 0.70f, bottom = 0.65f),
         distanceAlerts = listOf(
             DistanceAlert(
-                timestampMs = 1500L,
-                ttsPhrase = "Table detected, 2 meters ahead",
-                label = "Table — 2m",
-                boundingBox = BoundingBoxBounds(left = 0.38f, top = 0.40f, right = 0.62f, bottom = 0.58f)
-            ),
-            DistanceAlert(
-                timestampMs = 3500L,
+                timestampMs = 1200L,
                 ttsPhrase = "Table, 1 meter ahead",
                 label = "Table — 1m",
                 boundingBox = BoundingBoxBounds(left = 0.32f, top = 0.35f, right = 0.68f, bottom = 0.63f)
             ),
             DistanceAlert(
-                timestampMs = 5500L,
+                timestampMs = 2800L,
                 ttsPhrase = "Table, half meter ahead",
                 label = "Table — 0.5m",
                 boundingBox = BoundingBoxBounds(left = 0.25f, top = 0.28f, right = 0.75f, bottom = 0.70f)
             ),
             DistanceAlert(
-                timestampMs = 7000L,
+                timestampMs = 4500L,
                 ttsPhrase = "Caution! Table directly in front of you!",
                 label = "⚠ TABLE — STOP",
                 boundingBox = BoundingBoxBounds(left = 0.15f, top = 0.20f, right = 0.85f, bottom = 0.78f)
@@ -127,23 +113,25 @@ enum class AppMode(
         voiceCommand = "add object",
         icon = Icons.Filled.CameraAlt,
         rawResName = "register_watch",
-        demoVideoFile = "demo_videos/register watch.mp4",
-        detectionLabel = "Watch Registered",
+        demoVideoFile = "demo_videos/register_object.mp4",
+        detectionLabel = "",
         detectionTts = "Watch registered successfully",
-        detectionDelayMs = 2000L,
-        boundingBox = BoundingBoxBounds(left = 0.28f, top = 0.25f, right = 0.72f, bottom = 0.72f)
+        detectionDelayMs = 9000L,
+        boundingBox = BoundingBoxBounds(left = 0.25f, top = 0.22f, right = 0.75f, bottom = 0.75f),
+        enableScanningBeeps = true
     ),
     FIND_OBJECT(
         displayName = "Find Object",
         voiceCommand = "find object",
         icon = Icons.Filled.Search,
         rawResName = "find_object",
-        demoVideoFile = "demo_videos/find object.mp4",
-        detectionLabel = "Watch Found",
-        detectionTts = "Watch found, it is on the table, 2 feet ahead",
-        detectionDelayMs = 2000L,
-        boundingBox = BoundingBoxBounds(left = 0.20f, top = 0.35f, right = 0.80f, bottom = 0.70f),
-        placeMemoryTts = "Recalling place memory. Your watch was last seen on the lounge table. Searching now."
+        demoVideoFile = "demo_videos/find_object.mp4",
+        detectionLabel = "",
+        detectionTts = "Watch found",
+        detectionDelayMs = 6000L,
+        boundingBox = BoundingBoxBounds(left = 0.20f, top = 0.20f, right = 0.80f, bottom = 0.80f),
+        placeMemoryTts = "Your watch was found at lounge table last at 4:30. Searching now.",
+        enableProximityBeeps = true
     );
 
     /** Whether this mode uses progressive distance-based alerts instead of a single detection */

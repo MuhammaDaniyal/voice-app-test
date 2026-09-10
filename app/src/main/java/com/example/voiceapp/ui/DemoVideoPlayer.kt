@@ -1,6 +1,8 @@
 package com.example.voiceapp.ui
 
 import android.graphics.BitmapFactory
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.net.Uri
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
@@ -102,7 +104,19 @@ fun DemoVideoPlayer(
                 if (rawResId != 0) {
                     Uri.parse("android.resource://${context.packageName}/$rawResId")
                 } else {
-                    Uri.parse("asset:///${mode.demoVideoFile}")
+                    val assetPath = try {
+                        context.assets.open(mode.demoVideoFile).close()
+                        mode.demoVideoFile
+                    } catch (e: Exception) {
+                        if (mode.demoVideoFile.contains("register_object")) {
+                            "demo_videos/register watch.mp4"
+                        } else if (mode.demoVideoFile.contains("find_object")) {
+                            "demo_videos/find object.mp4"
+                        } else {
+                            mode.demoVideoFile
+                        }
+                    }
+                    Uri.parse("asset:///$assetPath")
                 }
             }
 
@@ -110,13 +124,20 @@ fun DemoVideoPlayer(
                 ExoPlayer.Builder(context).build().apply {
                     val mediaItem = MediaItem.fromUri(videoUri)
                     setMediaItem(mediaItem)
-                    repeatMode = Player.REPEAT_MODE_ALL
+                    repeatMode = Player.REPEAT_MODE_OFF
                     prepare()
                     playWhenReady = true
                 }
             }
 
-            // Monitoring loop: handles both single-shot and progressive detection
+            val toneGenerator = remember {
+                ToneGenerator(AudioManager.STREAM_NOTIFICATION, 85)
+            }
+            DisposableEffect(Unit) {
+                onDispose { toneGenerator.release() }
+            }
+
+            // Monitoring loop: handles single-shot, scanning beeps, proximity beeps, and progressive detection
             LaunchedEffect(exoPlayer, mode) {
                 if (mode.isProgressiveMode) {
                     // --- Progressive distance alerts (Hazard mode) ---
@@ -138,13 +159,99 @@ fun DemoVideoPlayer(
                             // Update status banner
                             onStatusUpdate(alert.ttsPhrase)
 
-                            // Speak the distance alert via TTS (QUEUE_ADD so they don't cut each other)
+                            // Speak the distance alert via TTS with QUEUE_FLUSH so voice and text stay 100% in sync
                             tts?.let {
+                                if (alert.ttsPhrase.contains("Caution", ignoreCase = true)) {
+                                    // Hurry / urgent voice for caution alert
+                                    it.setSpeechRate(1.45f)
+                                    it.setPitch(1.15f)
+                                } else {
+                                    it.setSpeechRate(1.25f)
+                                    it.setPitch(1.0f)
+                                }
                                 val params = Bundle()
-                                it.speak(alert.ttsPhrase, TextToSpeech.QUEUE_ADD, params, "hazard_alert_$firedCount")
+                                it.speak(alert.ttsPhrase, TextToSpeech.QUEUE_FLUSH, params, "hazard_alert_$firedCount")
                             }
 
                             Log.d("Baseer", "Hazard alert $firedCount: ${alert.ttsPhrase} at ${pos}ms")
+                        }
+                    }
+                } else if (mode.enableScanningBeeps) {
+                    // --- Registration mode with periodic scanning beeps ---
+                    // Single middle bounding box that shrinks as the watch moves further away
+                    showBoundingBox = true
+                    currentLabel = ""
+                    var lastBeepTime = 0L
+                    val beepIntervalMs = 1500L
+
+                    while (true) {
+                        delay(50)
+                        val pos = exoPlayer.currentPosition
+
+                        // Progressively shrink box as watch moves further away
+                        val progress = (pos.toFloat() / mode.detectionDelayMs).coerceIn(0f, 1f)
+                        val halfW = 0.26f - (0.13f * progress)
+                        val halfH = 0.22f - (0.11f * progress)
+                        val centerX = 0.50f
+                        val centerY = 0.48f
+
+                        currentBounds = BoundingBoxBounds(
+                            left = centerX - halfW,
+                            top = centerY - halfH,
+                            right = centerX + halfW,
+                            bottom = centerY + halfH
+                        )
+
+                        if (!detectionTriggered) {
+                            if (pos >= mode.detectionDelayMs) {
+                                detectionTriggered = true
+                                exoPlayer.pause()
+                                Log.d("Baseer", "Registration complete at ${pos}ms for: ${mode.displayName}")
+                                onDetectionTriggered(mode)
+                            } else if (pos - lastBeepTime >= beepIntervalMs) {
+                                lastBeepTime = pos
+                                toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP2, 200)
+                            }
+                        }
+                    }
+                } else if (mode.enableProximityBeeps) {
+                    // --- Find Object mode: bounding box expands, proximity beeps accelerate, ending with sprinkle chime ---
+                    showBoundingBox = true
+                    currentLabel = ""
+                    var lastBeepTime = 0L
+
+                    while (true) {
+                        delay(40)
+                        val pos = exoPlayer.currentPosition
+
+                        // Progressively expand box as camera nears the watch
+                        val progress = (pos.toFloat() / mode.detectionDelayMs).coerceIn(0f, 1f)
+                        val halfW = 0.12f + (0.16f * progress)
+                        val halfH = 0.10f + (0.14f * progress)
+                        val centerX = 0.50f
+                        val centerY = 0.48f
+
+                        currentBounds = BoundingBoxBounds(
+                            left = centerX - halfW,
+                            top = centerY - halfH,
+                            right = centerX + halfW,
+                            bottom = centerY + halfH
+                        )
+
+                        if (!detectionTriggered) {
+                            if (pos >= mode.detectionDelayMs) {
+                                detectionTriggered = true
+                                Log.d("Baseer", "6th second reached — sparkling and announcing detection, video continues")
+                                com.example.voiceapp.audio.SoundEffects.playSprinkleChime()
+                                onDetectionTriggered(mode)
+                            } else {
+                                // Geiger-counter style: interval shrinks from 1000ms down to 140ms
+                                val intervalMs = (1000L - (850L * progress).toLong()).coerceAtLeast(140L)
+                                if (pos - lastBeepTime >= intervalMs) {
+                                    lastBeepTime = pos
+                                    toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 75)
+                                }
+                            }
                         }
                     }
                 } else {
